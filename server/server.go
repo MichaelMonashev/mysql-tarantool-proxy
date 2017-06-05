@@ -2,10 +2,13 @@
 package server
 
 import (
+	"time"
+
 	// сторонние пакеты
-	tarantool "github.com/mialinx/go-tarantool"
+	tarantool "github.com/tarantool/go-tarantool"
 	"github.com/youtube/vitess/go/mysql"
-	"github.com/youtube/vitess/go/sqltypes"
+	//"github.com/youtube/vitess/go/sqltypes"
+	//"github.com/youtube/vitess/go/vt/servenv/grpcutils"
 
 	// наши пакеты
 	"mtproxy/config"
@@ -13,19 +16,29 @@ import (
 )
 
 type Server struct {
-	Addr          string
-	Net           string
+	Addr string
+	Net  string
+	User string
+	Pass string
+
 	TarantoolAddr string
 	TarantoolNet  string
+	TarantoolUser string
+	TarantoolPass string
 }
 
-func New(config *config.Config) (*Server, error) {
+func New(c *config.Config) (*Server, error) {
 
 	s := &Server{
-		Addr:          config.ServerAddr,
-		Net:           config.ServerNet,
-		TarantoolAddr: config.TarantoolAddr,
-		TarantoolNet:  config.TarantoolNet,
+		Addr: c.ServerAddr,
+		Net:  c.ServerNet,
+		User: c.ServerUser,
+		Pass: c.ServerPass,
+
+		TarantoolAddr: c.TarantoolAddr,
+		TarantoolNet:  c.TarantoolNet,
+		TarantoolUser: c.TarantoolUser,
+		TarantoolPass: c.TarantoolPass,
 	}
 
 	return s, nil
@@ -34,18 +47,21 @@ func New(config *config.Config) (*Server, error) {
 func (s *Server) ListenAndServe() error {
 
 	opts := tarantool.Opts{
-		Timeout: 50 * time.Millisecond,
-		Reconnect: 100 * time.Millisecond,
+		Timeout:       50 * time.Millisecond,
+		Reconnect:     100 * time.Millisecond,
 		MaxReconnects: 3,
-		User: "test",
-		Pass: "test",
+		User:          s.TarantoolUser,
+		Pass:          s.TarantoolPass,
 	}
 
-	tarantoolConn, err := tarantool.Connect(s.TarantoolNet+"://"+s.TarantoolAddr, opts)
+	addr := s.TarantoolNet + "://" + s.TarantoolAddr
+
+	tarantoolConn, err := tarantool.Connect(addr, opts)
 	if err != nil {
-		return Errorln("Failed to connect to tarantool server:", err)
+		return Errorln("Failed to connect to the Tarantool server on", addr, ":", err)
 	}
 	defer tarantoolConn.Close()
+	Warn("Successfully connected to the Tarantool server on", tarantoolConn.RemoteAddr())
 
 	handler := &Handler{
 		tarantoolConn: tarantoolConn,
@@ -53,11 +69,17 @@ func (s *Server) ListenAndServe() error {
 
 	//authServer := &mysql.AuthServerNone{}
 	authServer := mysql.NewAuthServerStatic()
+	authServer.Entries[s.User] = &mysql.AuthServerStaticEntry{
+		Password: s.Pass,
+		UserData: "",
+	}
 
 	// create a Listener.
 	listener, err := mysql.NewListener(s.Net, s.Addr, authServer, handler)
 	if err != nil {
 		return Errorln("Failed to listen to incoming connection:", err)
+	} else {
+		Warn("Start listening on", listener.Addr())
 	}
 	defer listener.Close()
 
@@ -78,31 +100,4 @@ func (s *Server) ListenAndServe() error {
 
 func (s *Server) Close() {
 	return
-}
-
-type Handler struct {
-	tarantoolConn *tarantool.Connection
-}
-
-func (h *Handler) NewConnection(c *mysql.Conn) {
-}
-
-func (h *Handler) ConnectionClosed(c *mysql.Conn) {
-
-}
-
-func (h *Handler) ComQuery(c *mysql.Conn, query []byte) (*sqltypes.Result, error) {
-
-	resp, err := h.tarantoolConn.Eval("box.sql.execute", string(query)) // ToDo убрать string ?
-	if err!=nil {
-		return nil, err
-	}
-	if resp.Code != tarantool.OkCode {
-		Warn("err==nil, resp.Code != tarantool.OkCode")
-		return nil, Errorln(fmt.Sprintf("<%d ERR 0x%x %s>", resp.RequestId, resp.Code, resp.Error))
-	}
-
-
-	return nil, nil
-
 }

@@ -13,6 +13,8 @@ import (
 type Config struct {
 	ServerAddr string
 	ServerNet  string
+	ServerUser string
+	ServerPass string
 
 	TarantoolAddr string
 	TarantoolNet  string
@@ -24,12 +26,12 @@ type Config struct {
 // Address could be specified in following ways:
 //
 // TCP connections:
-// - tcp://192.168.1.1:3013
-// - tcp://my.host:3013
-// - tcp:192.168.1.1:3013
-// - tcp:my.host:3013
-// - 192.168.1.1:3013
-// - my.host:3013
+// - tcp://192.168.1.1:3301
+// - tcp://my.host:3301
+// - tcp:192.168.1.1:3301
+// - tcp:my.host:3301
+// - 192.168.1.1:3301
+// - my.host:3301
 // Unix socket:
 // - unix:///abs/path/tnt.sock
 // - unix:path/tnt.sock
@@ -39,12 +41,17 @@ type Config struct {
 
 func LoadConfig() (*Config, error) {
 
-	// длинные параметры командной строки удобнее набирать, когда они пишутся через тире.
-	serverAddr := flag.String("server-addr", "localhost:3000", `The address for mysql client requests. Example: -server-addr="192.168.1.1:3000".`)
-	tarantoolAddr := flag.String("tarantool-addr", "localhost:3001", `The address of tarantool server. Example: -tarantool-addr="192.168.1.1:3013".`)
-	// ToDo добавить логин и пароль для прокси и тарантула
+	flag := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	flag.Parse()
+	// длинные параметры командной строки удобнее набирать, когда они пишутся через тире.
+	serverAddr := flag.String("server-addr", "127.0.0.1:3000", `Address for mysql client requests. Example: -server-addr="127.0.0.1:3000".`)
+	serverUser := flag.String("server-user", "", `User name for mysql client requests. Example: -server-user="admin".`)
+	serverPass := flag.String("server-pass", "", `Password for mysql client requests. Example: -server-pass="1234567".`)
+	tarantoolAddr := flag.String("tarantool-addr", "127.0.0.1:3301", `Address of tarantool server. Example: -tarantool-addr="127.0.0.1:3301".`)
+	tarantoolUser := flag.String("tarantool-user", "", `User for login to tarantool server. Example: -tarantool-user="admin".`)
+	tarantoolPass := flag.String("tarantool-pass", "", `Password to use when connecting to tarantool server. Example: -tarantool-pass="1234567".`)
+
+	flag.Parse(os.Args[1:])
 
 	var c Config
 	var err error
@@ -54,11 +61,17 @@ func LoadConfig() (*Config, error) {
 		return nil, Errorln("Error in address for mysql client requests.", err)
 	}
 
+	c.ServerUser = *serverUser
+	c.ServerPass = *serverPass
+
 	c.TarantoolNet, c.TarantoolAddr, err = parseAddr(*tarantoolAddr)
 
 	if err != nil {
 		return nil, Errorln("Error in address of tarantool server.", err)
 	}
+
+	c.TarantoolUser = *tarantoolUser
+	c.TarantoolPass = *tarantoolPass
 
 	return &c, nil
 
