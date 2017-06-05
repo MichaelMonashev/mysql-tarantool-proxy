@@ -1,0 +1,11 @@
+# Proxy listen options
+[server]
+addr = "127.0.0.1:3000"
+user = "test"
+pass = "test"
+
+# Connection options for Tarantool server
+[tarantool]
+addr = "127.0.0.1:3301"
+user = "test"
+pass = "test"

@@ -6,8 +6,16 @@ import (
 	"os"
 	"path/filepath"
 
+	// сторонние пакеты
+	toml "github.com/pelletier/go-toml"
+
 	// наши пакеты
 	. "mtproxy/warn"
+)
+
+const (
+	defaultServerAddr    = "127.0.0.1:3000"
+	defaultTarantoolAddr = "127.0.0.1:3301"
 )
 
 type Config struct {
@@ -44,34 +52,84 @@ func LoadConfig() (*Config, error) {
 	flag := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
 	// длинные параметры командной строки удобнее набирать, когда они пишутся через тире.
-	serverAddr := flag.String("server-addr", "127.0.0.1:3000", `Address for mysql client requests. Example: -server-addr="127.0.0.1:3000".`)
+	serverAddr := flag.String("server-addr", "", `Address for mysql client requests. Default: `+defaultServerAddr+`. Example: -server-addr="127.0.0.1:3000".`)
 	serverUser := flag.String("server-user", "", `User name for mysql client requests. Example: -server-user="admin".`)
 	serverPass := flag.String("server-pass", "", `Password for mysql client requests. Example: -server-pass="1234567".`)
-	tarantoolAddr := flag.String("tarantool-addr", "127.0.0.1:3301", `Address of tarantool server. Example: -tarantool-addr="127.0.0.1:3301".`)
+	tarantoolAddr := flag.String("tarantool-addr", "", `Address of tarantool server. Default: `+defaultTarantoolAddr+`. Example: -tarantool-addr="127.0.0.1:3301".`)
 	tarantoolUser := flag.String("tarantool-user", "", `User for login to tarantool server. Example: -tarantool-user="admin".`)
 	tarantoolPass := flag.String("tarantool-pass", "", `Password to use when connecting to tarantool server. Example: -tarantool-pass="1234567".`)
+	config := flag.String("config", "", `Path to TOML configuration file. Example: -config="/etc/mtproxy/config.toml".`)
 
 	flag.Parse(os.Args[1:])
 
 	var c Config
 	var err error
 
-	c.ServerNet, c.ServerAddr, err = parseAddr(*serverAddr)
-	if err != nil {
-		return nil, Errorln("Error in address for mysql client requests.", err)
+	if *config != "" {
+		// load TOML data by filename
+		tree, err := toml.LoadFile(*config)
+		if err != nil {
+			return nil, Errorln("Can not load configuration from file", config, ":", err)
+		}
+
+		// load configuration from TOML file
+		c.ServerNet, c.ServerAddr, err = parseAddr(tree.Get("server.addr").(string))
+		if err != nil {
+			return nil, Errorln("Error in configuration file in address for mysql client requests.", err)
+		}
+		c.ServerUser = tree.Get("server.user").(string)
+		c.ServerPass = tree.Get("server.pass").(string)
+
+		c.TarantoolNet, c.TarantoolAddr, err = parseAddr(tree.Get("tarantool.addr").(string))
+		if err != nil {
+			return nil, Errorln("Error in configuration file in address of tarantool server.", err)
+		}
+		c.TarantoolUser = tree.Get("tarantool.user").(string)
+		c.TarantoolPass = tree.Get("tarantool.pass").(string)
 	}
 
-	c.ServerUser = *serverUser
-	c.ServerPass = *serverPass
-
-	c.TarantoolNet, c.TarantoolAddr, err = parseAddr(*tarantoolAddr)
-
-	if err != nil {
-		return nil, Errorln("Error in address of tarantool server.", err)
+	// set defaults
+	if c.ServerAddr == "" {
+		c.ServerNet, c.ServerAddr, err = parseAddr(defaultServerAddr)
+		if err != nil {
+			return nil, Errorln("Error in default address for mysql client requests.", err)
+		}
 	}
 
-	c.TarantoolUser = *tarantoolUser
-	c.TarantoolPass = *tarantoolPass
+	if c.TarantoolAddr == "" {
+		c.TarantoolNet, c.TarantoolAddr, err = parseAddr(defaultTarantoolAddr)
+		if err != nil {
+			return nil, Errorln("Error in default address of tarantool server.", err)
+		}
+	}
+
+	// override configuration from command line
+
+	if *serverAddr != "" {
+		c.ServerNet, c.ServerAddr, err = parseAddr(*serverAddr)
+		if err != nil {
+			return nil, Errorln("Error command line args in address for mysql client requests.", err)
+		}
+	}
+	if *serverUser != "" {
+		c.ServerUser = *serverUser
+	}
+	if *serverPass != "" {
+		c.ServerPass = *serverPass
+	}
+
+	if *tarantoolAddr != "" {
+		c.TarantoolNet, c.TarantoolAddr, err = parseAddr(*tarantoolAddr)
+		if err != nil {
+			return nil, Errorln("Error command line args in address of tarantool server.", err)
+		}
+	}
+	if *tarantoolUser != "" {
+		c.TarantoolUser = *tarantoolUser
+	}
+	if *tarantoolPass != "" {
+		c.TarantoolPass = *tarantoolPass
+	}
 
 	return &c, nil
 
